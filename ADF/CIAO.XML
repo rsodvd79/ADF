@@ -1,0 +1,49 @@
+﻿<?xml version="1.0"?>
+<!--ADF-->
+<ADF>
+  <PROPERTY>
+    <STARTCONTROL>CIAO</STARTCONTROL>
+  </PROPERTY>
+  <MODULO>
+    <![CDATA[
+    Function SOMMA(X1, X2)
+      SOMMA = X1 + X2
+    End Function
+    ]]>
+  </MODULO>
+  <CONTROLS>
+    <CONTROL>
+      <PROPERTY>
+        <TYPE>FORM</TYPE>
+        <NAME>CIAO</NAME>
+        <WIDTH>200</WIDTH>
+        <HEIGHT>200</HEIGHT>
+        <TEXT>CIAO</TEXT>
+      </PROPERTY>
+      <EVENTS></EVENTS>
+      <CONTROLS>
+        <CONTROL>
+          <PROPERTY>
+            <TYPE>BUTTON</TYPE>
+            <NAME>OK</NAME>
+            <WIDTH>80</WIDTH>
+            <HEIGHT>80</HEIGHT>
+            <TEXT>OK</TEXT>
+            <TOP>10</TOP>
+            <LEFT>10</LEFT>
+          </PROPERTY>
+          <EVENTS>
+            <CLICK>
+              <![CDATA[
+              MsgBox "CIAO",vbOKOnly,"DVD"
+              ok.text = "SOMMA = " & SOMMA(1,1)
+              CIAO.text = "ADF"
+             ]]>
+            </CLICK>
+          </EVENTS>
+          <CONTROLS></CONTROLS>
+        </CONTROL>      
+      </CONTROLS>
+    </CONTROL>
+  </CONTROLS>  
+</ADF>
