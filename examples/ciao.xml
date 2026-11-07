@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ADF VERSION="2" SCRIPT_LANGUAGE="rhai">
+  <PROPERTY>
+    <STARTCONTROL>CIAO</STARTCONTROL>
+  </PROPERTY>
+  <MODULO><![CDATA[
+fn SOMMA(x1, x2) { x1 + x2 }
+  ]]></MODULO>
+  <CONTROLS>
+    <CONTROL>
+      <PROPERTY>
+        <TYPE>FORM</TYPE>
+        <NAME>CIAO</NAME>
+        <TEXT>CIAO</TEXT>
+        <WIDTH>200</WIDTH>
+        <HEIGHT>200</HEIGHT>
+        <LAYOUT>ABSOLUTE</LAYOUT>
+      </PROPERTY>
+      <CONTROLS>
+        <CONTROL>
+          <PROPERTY>
+            <TYPE>BUTTON</TYPE>
+            <NAME>OK</NAME>
+            <TEXT>OK</TEXT>
+            <WIDTH>80</WIDTH>
+            <HEIGHT>80</HEIGHT>
+            <TOP>10</TOP>
+            <LEFT>10</LEFT>
+          </PROPERTY>
+          <EVENTS>
+            <CLICK><![CDATA[
+message("DVD", "CIAO");
+set_text("OK", "SOMMA = " + SOMMA(1, 1).to_string());
+set_text("CIAO", "ADF");
+            ]]></CLICK>
+          </EVENTS>
+        </CONTROL>
+      </CONTROLS>
+    </CONTROL>
+  </CONTROLS>
+</ADF>

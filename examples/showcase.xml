@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ADF VERSION="2" SCRIPT_LANGUAGE="rhai">
+  <PROPERTY><STARTCONTROL>MAIN</STARTCONTROL></PROPERTY>
+  <MODULO><![CDATA[
+set_state("count", 0);
+fn increment() {
+    set_state("count", get_state("count") + 1);
+}
+  ]]></MODULO>
+  <CONTROLS>
+    <CONTROL>
+      <PROPERTY>
+        <TYPE>FORM</TYPE><NAME>MAIN</NAME><TEXT>ADF showcase</TEXT>
+        <WIDTH>480</WIDTH><HEIGHT>400</HEIGHT><LAYOUT>VERTICAL</LAYOUT>
+      </PROPERTY>
+      <CONTROLS>
+        <CONTROL>
+          <PROPERTY><TYPE>LABEL</TYPE><NAME>GREETING</NAME><TEXT>Hello world</TEXT><EXPAND>true</EXPAND></PROPERTY>
+        </CONTROL>
+        <CONTROL>
+          <PROPERTY><TYPE>TEXTBOX</TYPE><NAME>NAME</NAME><TEXT>world</TEXT><EXPAND>true</EXPAND></PROPERTY>
+          <EVENTS><CHANGE><![CDATA[
+set_text("GREETING", "Hello " + get_value("NAME"));
+          ]]></CHANGE></EVENTS>
+        </CONTROL>
+        <CONTROL>
+          <PROPERTY><TYPE>CHECKBOX</TYPE><NAME>ACTIVE</NAME><TEXT>Active</TEXT><EXPAND>true</EXPAND></PROPERTY>
+          <EVENTS><CHANGE><![CDATA[
+set_text("MAIN", if get_value("ACTIVE") { "Active" } else { "Inactive" });
+          ]]></CHANGE></EVENTS>
+        </CONTROL>
+        <CONTROL>
+          <PROPERTY>
+            <TYPE>COMBOBOX</TYPE><NAME>CHOICE</NAME><TEXT>Choice</TEXT><EXPAND>true</EXPAND>
+            <OPTIONS><OPTION>First</OPTION><OPTION>Second</OPTION></OPTIONS>
+          </PROPERTY>
+          <EVENTS><CHANGE><![CDATA[
+set_text("GREETING", "Selected index: " + get_value("CHOICE").to_string());
+          ]]></CHANGE></EVENTS>
+        </CONTROL>
+        <CONTROL>
+          <PROPERTY><TYPE>BUTTON</TYPE><NAME>COUNT</NAME><TEXT>Confirm increment</TEXT><EXPAND>true</EXPAND></PROPERTY>
+          <EVENTS><CLICK><![CDATA[
+if confirm("Counter", "Increment the counter?", "yes_no") == "yes" {
+    increment();
+    set_text("GREETING", "Count: " + get_state("count").to_string());
+}
+          ]]></CLICK></EVENTS>
+        </CONTROL>
+        <CONTROL>
+          <PROPERTY><TYPE>BUTTON</TYPE><NAME>OPEN</NAME><TEXT>Open another window</TEXT><EXPAND>true</EXPAND></PROPERTY>
+          <EVENTS><CLICK>show_form("DETAILS");</CLICK></EVENTS>
+        </CONTROL>
+      </CONTROLS>
+    </CONTROL>
+    <CONTROL>
+      <PROPERTY>
+        <TYPE>FORM</TYPE><NAME>DETAILS</NAME><TEXT>Another native window</TEXT>
+        <WIDTH>440</WIDTH><HEIGHT>160</HEIGHT><LAYOUT>HORIZONTAL</LAYOUT>
+      </PROPERTY>
+      <CONTROLS>
+        <CONTROL>
+          <PROPERTY><TYPE>LABEL</TYPE><NAME>NOTE</NAME><TEXT>Shared project runtime</TEXT><EXPAND>true</EXPAND></PROPERTY>
+        </CONTROL>
+        <CONTROL>
+          <PROPERTY><TYPE>BUTTON</TYPE><NAME>CLOSE</NAME><TEXT>Close this window</TEXT></PROPERTY>
+          <EVENTS><CLICK>close_form("DETAILS");</CLICK></EVENTS>
+        </CONTROL>
+      </CONTROLS>
+    </CONTROL>
+  </CONTROLS>
+</ADF>

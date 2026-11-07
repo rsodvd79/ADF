@@ -1,0 +1,30 @@
+[package]
+name = "adf"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.92"
+description = "XML-driven desktop applications with an egui editor and embedded Rhai"
+
+[features]
+native-smoke = []
+
+[[example]]
+name = "native_smoke"
+required-features = ["native-smoke"]
+
+[dependencies]
+eframe = { version = "0.33.3", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "persistence"] }
+quick-xml = { version = "0.42", features = ["serialize"] }
+rhai = { version = "1.27", features = ["no_module"] }
+rfd = "0.17"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "27", default-features = false, features = ["metal"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wgpu = { version = "27", default-features = false, features = ["dx12"] }
+
+[profile.release]
+strip = true
