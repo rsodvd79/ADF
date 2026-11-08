@@ -46,7 +46,9 @@ impl Smoke {
         let ready = self.app.session.as_ref().is_some_and(|s| !s.busy);
         match self.phase {
             0 => {
-                self.app.run(ctx);
+                if !self.app.runtime_only {
+                    self.app.run(ctx);
+                }
                 self.phase = 1;
             }
             1 if ready => {
@@ -138,14 +140,27 @@ impl Smoke {
                 {
                     return Err("Persistent module state mismatch".into());
                 }
-                self.app
-                    .session
-                    .as_mut()
-                    .ok_or("No worker")?
-                    .hide_form("DETAILS")?;
+                if self.app.runtime_only {
+                    self.app.close_project_form("MAIN");
+                } else {
+                    self.app
+                        .session
+                        .as_mut()
+                        .ok_or("No worker")?
+                        .hide_form("DETAILS")?;
+                }
                 self.phase = 9;
             }
             9 if ready => {
+                if self.app.runtime_only {
+                    let snapshot = self.app.snapshot.as_ref().ok_or("No runner snapshot")?;
+                    if snapshot.visible.contains("MAIN") || !snapshot.visible.contains("DETAILS") {
+                        return Err("Closing STARTCONTROL stopped the secondary form".into());
+                    }
+                    self.app.close_project_form("DETAILS");
+                    self.phase = 10;
+                    return Ok(false);
+                }
                 if self
                     .app
                     .snapshot
@@ -158,6 +173,7 @@ impl Smoke {
                 }
                 return Ok(true);
             }
+            10 if self.app.closing => return Ok(true),
             _ => {}
         }
         Ok(false)
@@ -180,6 +196,14 @@ impl eframe::App for Smoke {
 }
 
 pub fn run() -> Result<(), String> {
+    run_mode(false)
+}
+
+pub fn run_runtime_only() -> Result<(), String> {
+    run_mode(true)
+}
+
+fn run_mode(runtime_only: bool) -> Result<(), String> {
     let outcome = Rc::new(RefCell::new(Err(
         "Native window closed before smoke completed".into(),
     )));
@@ -187,16 +211,22 @@ pub fn run() -> Result<(), String> {
     eframe::run_native(
         "ADF native smoke",
         eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default().with_inner_size([1100.0, 750.0]),
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([1100.0, 750.0])
+                .with_visible(!runtime_only),
             persist_window: false,
             ..Default::default()
         },
         Box::new(move |cc| {
             Ok(Box::new(Smoke {
-                app: AdfApp::new(
-                    cc,
-                    Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/ciao.xml")),
-                ),
+                app: {
+                    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/ciao.xml");
+                    let mut app = AdfApp::new(cc, runtime_only.then(|| path.clone()));
+                    if !runtime_only {
+                        app.open(path);
+                    }
+                    app
+                },
                 phase: 0,
                 start: Instant::now(),
                 outcome: result,

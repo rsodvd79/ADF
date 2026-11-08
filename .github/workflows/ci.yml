@@ -1,4 +1,4 @@
-name: Rust desktop
+name: Build and release ADF
 
 on:
   push:
@@ -9,16 +9,33 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      timestamp: ${{ steps.release.outputs.timestamp }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Generate common UTC release timestamp
+        id: release
+        shell: bash
+        run: |
+          timestamp="$(date -u +'%Y.%m.%d.%H.%M')"
+          echo "timestamp=$timestamp" >> "$GITHUB_OUTPUT"
+          echo "tag=adf-${timestamp}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-2025
-            artifact: adf-windows-x64
+            platform: windows
           - os: macos-15
-            artifact: adf-macos-arm64
+            platform: macos
     runs-on: ${{ matrix.os }}
+    env:
+      BUILD_TIMESTAMP: ${{ needs.prepare.outputs.timestamp }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -27,7 +44,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Test
-        run: cargo test --locked
+        run: cargo test --all-features --locked
       - name: Clippy
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
       - name: Release
@@ -35,16 +52,47 @@ jobs:
       - name: Package macOS
         if: runner.os == 'macOS'
         run: bash scripts/package-macos.sh
-      - uses: actions/upload-artifact@v4
+      - name: Package Windows
         if: runner.os == 'Windows'
-        with:
-          name: ${{ matrix.artifact }}
-          path: |
-            target/release/adf.exe
-            examples/*.xml
-            README.md
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = 'target/bundle/windows'
+          New-Item -ItemType Directory -Force -Path "$package/examples" | Out-Null
+          Copy-Item -LiteralPath 'target/release/adf.exe', 'README.md' -Destination $package
+          Copy-Item -LiteralPath 'examples/ciao.xml', 'examples/showcase.xml' -Destination "$package/examples"
+          Compress-Archive -Path "$package/*" -DestinationPath "target/bundle/ADF.windows.$env:BUILD_TIMESTAMP.zip" -Force
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'macOS'
         with:
-          name: ${{ matrix.artifact }}
-          path: target/bundle/adf-macos-arm64.zip
+          name: adf-${{ matrix.platform }}
+          path: target/bundle/ADF.${{ matrix.platform }}.${{ needs.prepare.outputs.timestamp }}.zip
+          if-no-files-found: error
+
+  release:
+    if: github.event_name != 'pull_request'
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: adf-*
+          merge-multiple: true
+          path: release-assets
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          BUILD_TIMESTAMP: ${{ needs.prepare.outputs.timestamp }}
+        shell: bash
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "release-assets/ADF.windows.${BUILD_TIMESTAMP}.zip" \
+            "release-assets/ADF.macos.${BUILD_TIMESTAMP}.zip" \
+            --target "$COMMIT_SHA" \
+            --title "ADF ${BUILD_TIMESTAMP} (UTC)" \
+            --notes "Build release automatica per Windows x64 e macOS Apple Silicon. Artefatti non firmati e non notarizzati." \
+            --latest

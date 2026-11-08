@@ -7,7 +7,9 @@ fn main() -> eframe::Result {
         eframe::NativeOptions {
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([1100.0, 750.0])
-                .with_min_inner_size([800.0, 600.0]),
+                .with_min_inner_size([800.0, 600.0])
+                .with_visible(path.is_none()),
+            persist_window: path.is_none(),
             ..Default::default()
         },
         Box::new(move |cc| Ok(Box::new(adf::ui::AdfApp::new(cc, path)))),

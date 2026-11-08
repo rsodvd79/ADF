@@ -60,6 +60,8 @@ pub struct AdfApp {
     rename_for: String,
     rename: String,
     drag: Option<Drag>,
+    runtime_only: bool,
+    pending_form_closes: HashSet<String>,
 }
 
 #[cfg(feature = "native-smoke")]
@@ -67,7 +69,7 @@ pub struct AdfApp {
 mod native_smoke;
 
 #[cfg(feature = "native-smoke")]
-pub use native_smoke::run as run_native_smoke;
+pub use native_smoke::{run as run_native_smoke, run_runtime_only as run_native_runner_smoke};
 
 impl AdfApp {
     pub fn new(cc: &eframe::CreationContext<'_>, path: Option<PathBuf>) -> Self {
@@ -90,16 +92,28 @@ impl AdfApp {
             rename_for: String::new(),
             rename: String::new(),
             drag: None,
+            runtime_only: path.is_some(),
+            pending_form_closes: HashSet::new(),
         };
         app.set_theme(&cc.egui_ctx);
         if let Some(path) = path {
             app.open(path);
+            if app.file.is_some() {
+                app.run(&cc.egui_ctx);
+            }
         }
         app
     }
 
     fn report(&mut self, result: Result<(), String>) {
         if let Err(e) = result {
+            if self.runtime_only {
+                rfd::MessageDialog::new()
+                    .set_title("ADF")
+                    .set_description(&e)
+                    .set_level(rfd::MessageLevel::Error)
+                    .show();
+            }
             self.editor.error = Some(e.clone());
             self.log(e);
         }
@@ -229,6 +243,7 @@ impl AdfApp {
         }
         self.dialog = None;
         self.snapshot = None;
+        self.pending_form_closes.clear();
     }
 
     fn run(&mut self, ctx: &egui::Context) {
@@ -261,7 +276,12 @@ impl AdfApp {
         let mut finished = false;
         for update in updates {
             match update {
-                Update::State(state) => self.snapshot = Some(*state),
+                Update::State(mut state) => {
+                    state
+                        .visible
+                        .retain(|name| !self.pending_form_closes.contains(name));
+                    self.snapshot = Some(*state);
+                }
                 Update::Dialog(dialog) => {
                     if self
                         .session
@@ -287,9 +307,19 @@ impl AdfApp {
             || self
                 .snapshot
                 .as_ref()
-                .is_some_and(|s| !s.visible.contains(&s.doc.property.start))
+                .is_some_and(|s| self.project_finished(s))
         {
             self.stop();
+        }
+        if self.session.as_ref().is_some_and(|s| !s.busy)
+            && let Some(name) = self.pending_form_closes.iter().next().cloned()
+            && let Some(session) = &mut self.session
+        {
+            let result = session.hide_form(&name);
+            if result.is_ok() {
+                self.pending_form_closes.remove(&name);
+            }
+            self.report(result);
         }
         self.retired.retain_mut(|s| {
             if s.is_finished() {
@@ -301,6 +331,41 @@ impl AdfApp {
         });
         if self.session.as_ref().is_some_and(|s| s.busy) || !self.retired.is_empty() {
             ctx.request_repaint_after(Duration::from_millis(10));
+        }
+        if self.runtime_only && self.session.is_none() && self.retired.is_empty() {
+            self.closing = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    fn project_finished(&self, snapshot: &Snapshot) -> bool {
+        if self.runtime_only {
+            snapshot.visible.is_empty()
+        } else {
+            !snapshot.visible.contains(&snapshot.doc.property.start)
+        }
+    }
+
+    fn close_project_form(&mut self, name: &str) {
+        let Some(snapshot) = &mut self.snapshot else {
+            return;
+        };
+        if self.runtime_only {
+            snapshot.visible.remove(name);
+            self.pending_form_closes.insert(name.into());
+            if snapshot.visible.is_empty() {
+                self.stop();
+            }
+        } else if name == snapshot.doc.property.start
+            || self.session.as_ref().is_none_or(|s| s.busy)
+        {
+            self.stop();
+        } else if let Some(session) = &mut self.session {
+            let result = session.hide_form(name);
+            if result.is_ok() {
+                snapshot.visible.remove(name);
+            }
+            self.report(result);
         }
     }
 
@@ -769,7 +834,7 @@ impl AdfApp {
         let Some(mut snapshot) = self.snapshot.take() else {
             return;
         };
-        let mut stop = false;
+        let mut closed_forms = vec![];
         for form in &mut snapshot.doc.controls.items {
             let name = form.property.name.clone();
             if !snapshot.visible.contains(&name) {
@@ -797,13 +862,8 @@ impl AdfApp {
                 },
             );
             if close {
-                if name == snapshot.doc.property.start || busy {
-                    stop = true;
-                } else if let Some(s) = &mut self.session {
-                    let result = s.hide_form(&name);
-                    self.report(result);
-                    snapshot.visible.remove(&name);
-                }
+                closed_forms.push(name);
+                continue;
             }
             for event in events {
                 if let Some(s) = &mut self.session {
@@ -813,8 +873,8 @@ impl AdfApp {
             }
         }
         self.snapshot = Some(snapshot);
-        if stop {
-            self.stop();
+        for name in closed_forms {
+            self.close_project_form(&name);
         }
         if let Some(dialog) = &self.dialog {
             let mut choice = None;
@@ -858,6 +918,11 @@ impl AdfApp {
 impl eframe::App for AdfApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll(ctx);
+        if self.runtime_only {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.runtime_windows(ctx);
+            return;
+        }
         if ctx.input(|i| i.viewport().close_requested()) && !self.closing {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request_action(Action::Close, ctx);
@@ -922,7 +987,9 @@ impl eframe::App for AdfApp {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, "preferences", &self.preferences);
+        if !self.runtime_only {
+            eframe::set_value(storage, "preferences", &self.preferences);
+        }
     }
 }
 
@@ -1092,7 +1159,84 @@ mod tests {
             rename_for: String::new(),
             rename: String::new(),
             drag: None,
+            runtime_only: false,
+            pending_form_closes: HashSet::new(),
         }
+    }
+
+    fn wait_ready(app: &mut AdfApp, ctx: &egui::Context) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            app.poll(ctx);
+            if app.session.as_ref().is_some_and(|s| !s.busy) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("Project did not become ready: {:?}", app.errors);
+    }
+
+    #[test]
+    fn runner_keeps_other_forms_alive_when_startcontrol_closes_and_exits_on_last_form() {
+        let ctx = egui::Context::default();
+        let mut app = designer_app();
+        app.runtime_only = true;
+        app.editor
+            .doc
+            .controls
+            .items
+            .push(Control::new(Kind::Form, "SECOND".into()));
+        app.editor.doc.module = "show_form(\"SECOND\");".into();
+        app.run(&ctx);
+        wait_ready(&mut app, &ctx);
+        app.close_project_form("MAIN");
+        assert!(app.session.is_some());
+        wait_ready(&mut app, &ctx);
+        let snapshot = app.snapshot.as_ref().unwrap();
+        assert_eq!(snapshot.visible, HashSet::from(["SECOND".into()]));
+        assert!(!app.project_finished(snapshot));
+        app.close_project_form("SECOND");
+        assert!(app.session.is_none());
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !app.closing && std::time::Instant::now() < deadline {
+            app.poll(&ctx);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(app.closing);
+    }
+
+    #[test]
+    fn editor_still_stops_project_without_exiting_when_startcontrol_closes() {
+        let ctx = egui::Context::default();
+        let mut app = designer_app();
+        app.run(&ctx);
+        wait_ready(&mut app, &ctx);
+        app.close_project_form("MAIN");
+        app.poll(&ctx);
+        assert!(app.session.is_none());
+        assert!(!app.closing);
+    }
+
+    #[test]
+    fn closing_last_runner_form_cancels_an_initialization_dialog() {
+        let ctx = egui::Context::default();
+        let mut app = designer_app();
+        app.runtime_only = true;
+        app.editor.doc.module = "message(\"Waiting\", \"Close the form\");".into();
+        app.run(&ctx);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while app.dialog.is_none() && std::time::Instant::now() < deadline {
+            app.poll(&ctx);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let dialog = app.dialog.take().expect("Initialization dialog");
+        app.close_project_form("MAIN");
+        while !app.closing && std::time::Instant::now() < deadline {
+            app.poll(&ctx);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(app.closing);
+        assert!(dialog.reply.try_send("ok".into()).is_err());
     }
 
     fn frame(

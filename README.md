@@ -1,24 +1,101 @@
 # ADF
 
-ADF ora include un'applicazione **Rust + eframe/egui**, con progetti XML
-versionati e **Rhai incorporato**. Non richiede .NET, componenti COM legacy o un interprete
-esterno. Target: **Windows x64** (DirectX 12) e **macOS Apple Silicon** (Metal).
+ADF è un'applicazione desktop **Rust + eframe/egui** per creare ed eseguire
+interfacce definite in XML, con logica **Rhai incorporata**. Non richiede
+.NET, componenti COM legacy o un interprete esterno.
 
-## Avvio della versione Rust
+| Piattaforma | Architettura | Backend grafico | Pacchetto |
+|---|---|---|---|
+| Windows | x64 | DirectX 12 | `ADF.windows.yyyy.MM.dd.HH.mm.zip` |
+| macOS | Apple Silicon / ARM64 | Metal | `ADF.macos.yyyy.MM.dd.HH.mm.zip` |
+
+## Scaricare e avviare ADF
+
+Scarica il pacchetto del tuo sistema dalla pagina
+[Releases](https://github.com/rsodvd79/ADF/releases) ed estrai lo ZIP.
+Per usare un pacchetto già compilato **non serve installare Rust**.
+
+**Windows**, dalla cartella estratta in PowerShell:
+
+```powershell
+# Aprire l'editor
+.\adf.exe
+
+# Eseguire CIAO direttamente, senza editor
+.\adf.exe ".\examples\ciao.xml"
+```
+
+**macOS**, dalla cartella contenente `ADF.app`:
+
+```bash
+# Aprire l'editor (oppure fare doppio clic su ADF.app)
+open ADF.app
+
+# Eseguire CIAO in una nuova istanza, senza editor
+open -n ADF.app --args "$PWD/ADF.app/Contents/Resources/examples/ciao.xml"
+```
+
+Gli artefatti non sono firmati con certificato distributivo né notarizzati;
+il sistema operativo può mostrare avvisi o limitarne l'apertura.
+
+### Modalità di avvio
+
+| Argomenti | Comportamento |
+|---|---|
+| Nessuno | Mostra l'editor ADF; usa Open e Run per caricare ed eseguire un progetto |
+| Percorso XML | Esegue subito il progetto, senza mostrare l'editor ADF |
+
+Nell'avvio diretto viene aperto STARTCONTROL; gli script possono aprire altri
+FORM con `show_form`. Chiudere STARTCONTROL non termina ADF se restano altre
+finestre del progetto aperte: **ADF termina alla chiusura dell'ultimo FORM
+visibile**, anche se la chiusura è richiesta da uno script.
+I FORM definiti nell'XML ma mai aperti non mantengono attiva l'applicazione.
+Un file non valido o uno script legacy non eseguibile mostra un errore;
+non viene aperto automaticamente l'editor.
+
+## Compilare dai sorgenti
 
 Serve Rust stabile, almeno 1.92, con gli strumenti di compilazione della
 piattaforma: Xcode Command Line Tools su macOS, Visual Studio Build Tools
 con C++/Windows SDK su Windows.
 
 ```bash
+git clone https://github.com/rsodvd79/ADF.git
+cd ADF
+
+# Editor
 cargo run --locked
+
+# Esecuzione diretta dell'esempio
 cargo run --locked -- "examples/ciao.xml"
+
+# Compilazione ottimizzata
 cargo build --release --locked
 ```
 
 L'eseguibile è `target/release/adf` oppure `target/release/adf.exe`.
-Un percorso da CLI apre il documento nell'editor; **Run** avvia gli script.
-Senza argomenti si apre un progetto vuoto, non si chiude l'applicazione.
+Su macOS puoi eseguire il build direttamente con:
+
+```bash
+./target/release/adf "examples/ciao.xml"
+```
+
+Per percorsi contenenti spazi, racchiudi sempre il percorso XML tra virgolette.
+
+## Struttura del progetto Rust
+
+| Percorso | Contenuto |
+|---|---|
+| `Cargo.toml`, `Cargo.lock` | Package Rust e dipendenze bloccate |
+| `src/main.rs` | Avvio dell'editor o esecuzione diretta da XML |
+| `src/model.rs`, `src/document.rs` | Modello, validazione, importazione e salvataggio XML |
+| `src/runtime.rs` | Worker Rhai, eventi, dialoghi e limiti di esecuzione |
+| `src/ui.rs`, `src/editor.rs` | Finestre native, editor XML e designer visuale |
+| `examples/ciao.xml`, `examples/showcase.xml` | Progetti XML v2 pronti all'esecuzione |
+| `src/native_smoke.rs`, `examples/native_smoke.rs` | Verifiche con finestre native |
+| `.github/workflows/ci.yml` | Build, pacchetti e pubblicazione GitHub Release |
+| `scripts/package-macos.sh`, `packaging/macos/Info.plist` | Creazione del bundle macOS |
+| `ADF/`, `ADF.sln` | Versione VB.NET legacy conservata come riferimento |
 
 ## Editor e funzionalità
 
@@ -36,7 +113,9 @@ Senza argomenti si apre un progetto vuoto, non si chiude l'applicazione.
   e dieci progetti recenti.
 - **Run / Stop**: l'esecuzione usa una copia del progetto. Le modifiche
   nell'editor si applicano al successivo Run, non al runtime già attivo.
-  Chiudere la finestra iniziale termina il progetto ma lascia aperto l'editor.
+  In modalità editor, chiudere la finestra iniziale termina il progetto ma
+  lascia aperto l'editor. Nell'avvio diretto da XML, invece, ogni FORM può
+  essere chiuso indipendentemente e ADF termina alla chiusura dell'ultimo.
 
 Le modifiche visuali normalizzano l'XML: non preservano commenti,
 formattazione o delimitatori CDATA, ma preservano il testo degli script.
@@ -100,8 +179,9 @@ interrompe l'handler, mantenendo le modifiche già effettuate.
 
 I dialoghi bloccano lo script, **non il thread GUI**. Le finestre del
 progetto non accettano nuove interazioni durante l'evento/dialogo;
-l'editor rimane utilizzabile. Stop, reload e chiusura durante un'attesa
-annullano lo script senza eseguire le istruzioni successive.
+in modalità editor, l'editor rimane utilizzabile. Stop e reload annullano
+lo script senza eseguire le istruzioni successive. Nell'avvio diretto,
+chiudere l'ultimo FORM annulla anche un eventuale dialogo in attesa.
 
 ## Limiti e protezioni
 
@@ -145,7 +225,7 @@ Prestare attenzione a maiuscole/minuscole degli ID, conversioni dei tipi e
 valori di ritorno dei dialoghi. Non vengono importati oggetti Windows/COM.
 Gerarchie, tipi o campi non supportati producono errori, non perdite silenziose.
 
-## Verifiche e distribuzione
+## Verifiche
 
 ```bash
 cargo fmt --all -- --check
@@ -159,23 +239,54 @@ un backend grafico funzionante:
 
 ```bash
 cargo run --locked --features native-smoke --example native_smoke
+cargo run --locked --features native-smoke --example native_smoke -- --runtime-only
 ```
 
 Il test nativo renderizza CIAO e showcase, conferma i dialoghi tramite il
 protocollo del worker e verifica risultati, CHANGE, viewport e Stop.
+La variante `--runtime-only` verifica l'avvio automatico senza editor e
+la chiusura indipendente dei form fino all'uscita dell'applicazione.
 I test egui headless verificano separatamente click, blocco durante eventi
 e drag-and-drop tramite eventi reali di puntatore. Non sostituiscono una
 verifica manuale di focus, screen reader e DPI su ciascun sistema.
 
-La CI aggiunta esegue fmt/test/clippy/build su Windows x64 e macOS ARM64
-e produce artefatti. Su macOS, dopo il build release:
+## Release automatiche su GitHub
+
+Il workflow [Build and release ADF](.github/workflows/ci.yml) compila
+**in release a ogni push**, su Windows x64
+e macOS ARM64, dopo fmt/test/clippy. Solo se entrambi i build riescono pubblica
+una **GitHub Release** collegata al commit, con i due ZIP:
+
+```text
+ADF.windows.yyyy.MM.dd.HH.mm.zip
+ADF.macos.yyyy.MM.dd.HH.mm.zip
+```
+
+Il timestamp è UTC e comune ai due pacchetti. Il tag include anche ID del run
+e tentativo, evitando collisioni tra push o riesecuzioni nello stesso minuto.
+Le pull request eseguono le verifiche e caricano gli artefatti senza pubblicare
+release; l'avvio manuale del workflow pubblica anche la release.
+La pubblicazione usa `GITHUB_TOKEN`, con permesso `contents: write` solo nel
+job di release, senza secret aggiuntivi.
+
+### Creare il bundle macOS localmente
+
+Su macOS Apple Silicon, dopo `cargo build --release --locked`:
 
 ```bash
 bash scripts/package-macos.sh
 open target/bundle/ADF.app
 ```
 
-Il bundle e gli esempi sono inclusi in `target/bundle/adf-macos-arm64.zip`.
+Il bundle e gli esempi sono inclusi in `target/bundle/ADF.macos.<timestamp>.zip`.
+Senza parametri il packaging usa il timestamp UTC corrente; per impostarlo
+esplicitamente puoi usare, ad esempio:
+
+```bash
+BUILD_TIMESTAMP=2026.11.08.18.15 bash scripts/package-macos.sh
+```
+
+Il pacchetto Windows contiene `adf.exe`, README ed esempi XML.
 Gli artefatti non sono firmati con certificato distributivo né notarizzati.
 La pubblicazione richiede una scelta di licenza e, per distribuzione
 firmata, certificati del proprietario.
@@ -189,6 +300,13 @@ Hot reload automatico, evidenziazione/completamento Rhai, contenitori e
 tabelle, CLI headless ed esportazione di launcher dedicati. Linux, altre
 architetture e accesso al sistema con permessi espliciti sono fuori dal
 perimetro attuale. Non sono inclusi debugger, plugin, cloud o telemetria.
+
+## Licenza e autore
+
+Non è presente un file di licenza. Prima della distribuzione, il proprietario
+deve definire i termini di utilizzo del software.
+
+Autore: [@rsodvd79](https://github.com/rsodvd79).
 
 <details>
 <summary>Riferimento della versione legacy VB.NET/Windows Forms</summary>
